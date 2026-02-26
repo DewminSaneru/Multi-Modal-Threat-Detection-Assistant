@@ -1,0 +1,30 @@
+name: multi_modal_threat_detection_assistant
+description: A Flutter prototype for the Multi-Modal Threat Detection Assistant with UI flows and integration stubs.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  go_router: ^14.2.0
+  google_fonts: ^6.2.1
+  fl_chart: ^0.68.0
+  file_picker: ^8.1.2
+  image_picker: ^1.1.1
+  animations: ^2.0.11
+  http: ^1.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/demo/
+
