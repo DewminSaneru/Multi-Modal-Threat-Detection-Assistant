@@ -16,7 +16,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  bool _loading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -27,16 +27,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _onSubmit() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _loading = true);
-    await ref
-        .read(authProvider)
-        .login(_emailCtrl.text.trim(), _passwordCtrl.text.trim());
-    setState(() => _loading = false);
-    if (mounted) context.go('/home');
+    final auth = ref.read(authProvider);
+    auth.clearError();
+    await auth.login(_emailCtrl.text.trim(), _passwordCtrl.text.trim());
+    if (auth.isAuthenticated && mounted) context.go('/home');
   }
 
   @override
   Widget build(BuildContext context) {
+    final auth = ref.watch(authProvider);
+
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -60,8 +60,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           key: _formKey,
                           child: Column(
                             children: [
+
+                              // ── Error banner ──────────────────────────────
+                              if (auth.errorMessage != null) ...[
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                        color: Colors.red.shade200),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.error_outline,
+                                          color: Colors.red.shade700,
+                                          size: 18),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          auth.errorMessage!,
+                                          style: TextStyle(
+                                              color: Colors.red.shade800,
+                                              fontSize: 13),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
+                              // ── Email ─────────────────────────────────────
                               TextFormField(
                                 controller: _emailCtrl,
+                                keyboardType: TextInputType.emailAddress,
                                 decoration: const InputDecoration(
                                   labelText: 'Email',
                                   prefixIcon: Icon(Icons.email_outlined),
@@ -72,51 +107,66 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                         : 'Enter a valid email',
                               ),
                               const SizedBox(height: 16),
+
+                              // ── Password ──────────────────────────────────
                               TextFormField(
                                 controller: _passwordCtrl,
-                                decoration: const InputDecoration(
+                                obscureText: _obscurePassword,
+                                decoration: InputDecoration(
                                   labelText: 'Password',
-                                  prefixIcon: Icon(Icons.lock_outline),
+                                  prefixIcon:
+                                      const Icon(Icons.lock_outline),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(_obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined),
+                                    onPressed: () => setState(() =>
+                                        _obscurePassword =
+                                            !_obscurePassword),
+                                  ),
                                 ),
-                                obscureText: true,
                                 validator: (v) =>
                                     v != null && v.length >= 6
                                         ? null
                                         : 'Min 6 characters',
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 8),
+
+                              // ── Forgot password ───────────────────────────
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
-                                  onPressed: () => context.push('/forgot'),
-                                  child: const Text('Forgot password?'),
+                                  onPressed: () =>
+                                      context.push('/forgot'),
+                                  child:
+                                      const Text('Forgot password?'),
                                 ),
                               ),
                               const SizedBox(height: 8),
+
+                              // ── Login button ──────────────────────────────
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton.icon(
-                                  onPressed: _loading ? null : _onSubmit,
-                                  icon: const Icon(Icons.verified_user),
-                                  label: Text(_loading
+                                  onPressed:
+                                      auth.isLoading ? null : _onSubmit,
+                                  icon: auth.isLoading
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white),
+                                        )
+                                      : const Icon(Icons.verified_user),
+                                  label: Text(auth.isLoading
                                       ? 'Signing in...'
                                       : 'Login securely'),
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                onPressed: _loading
-                                    ? null
-                                    : () {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(const SnackBar(
-                                                content: Text(
-                                                    'Google Sign-in placeholder')));
-                                      },
-                                icon: const Icon(Icons.g_mobiledata),
-                                label: const Text('Continue with Google'),
-                              ),
-                              const SizedBox(height: 12),
+
+                              // ── Sign up link ──────────────────────────────
                               TextButton(
                                 onPressed: () => context.push('/signup'),
                                 child: const Text(
@@ -137,4 +187,3 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 }
-
