@@ -17,7 +17,22 @@ final mediaDetectionProvider =
 final fileDetectionProvider =
     StateProvider.autoDispose<FileDetection?>((ref) => null);
 
+/// Mutable list of scan history entries; scanners add to this on each completed scan.
+class ScanHistoryNotifier extends StateNotifier<List<ScanHistoryEntry>> {
+  ScanHistoryNotifier() : super([]);
+
+  void addEntry(ScanHistoryEntry entry) {
+    state = [entry, ...state];
+  }
+}
+
+final scanHistoryNotifierProvider =
+    StateNotifierProvider<ScanHistoryNotifier, List<ScanHistoryEntry>>((ref) {
+  return ScanHistoryNotifier();
+});
+
+/// Real scan history (newest first). Use this in the history screen.
 final historyProvider = Provider<List<ScanHistoryEntry>>((ref) {
-  return ref.watch(mlServiceProvider).history();
+  return ref.watch(scanHistoryNotifierProvider);
 });
 

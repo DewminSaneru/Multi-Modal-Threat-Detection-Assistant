@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../widgets/section_header.dart';
+import '../../models/detection_models.dart';
+import '../../providers/scanner_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/section_header.dart';
 
-class ChatScannerScreen extends StatefulWidget {
+class ChatScannerScreen extends ConsumerStatefulWidget {
   const ChatScannerScreen({super.key});
 
   @override
-  State<ChatScannerScreen> createState() => _ChatScannerScreenState();
+  ConsumerState<ChatScannerScreen> createState() => _ChatScannerScreenState();
 }
 
-class _ChatScannerScreenState extends State<ChatScannerScreen> {
+class _ChatScannerScreenState extends ConsumerState<ChatScannerScreen> {
   final _controller = TextEditingController();
   bool _loading = false;
   Map<String, double>? _emotionStatus;
@@ -23,10 +26,10 @@ class _ChatScannerScreenState extends State<ChatScannerScreen> {
 
   Future<void> _runScan() async {
     setState(() => _loading = true);
-    
+
     // Simulate processing delay
     await Future.delayed(const Duration(seconds: 1));
-    
+
     // Generate dummy emotion status data
     setState(() {
       _emotionStatus = {
@@ -41,6 +44,21 @@ class _ChatScannerScreenState extends State<ChatScannerScreen> {
       };
       _loading = false;
     });
+
+    _addToHistory();
+  }
+
+  void _addToHistory() {
+    ref.read(scanHistoryNotifierProvider.notifier).addEntry(
+          ScanHistoryEntry(
+            id: 'chat-${DateTime.now().millisecondsSinceEpoch}',
+            type: 'chat',
+            title: 'Chat / text',
+            resultSummary: 'Emotion analysis • ${_emotionStatus!.length} dimensions',
+            date: DateTime.now(),
+            risk: RiskLevel.low,
+          ),
+        );
   }
 
   @override

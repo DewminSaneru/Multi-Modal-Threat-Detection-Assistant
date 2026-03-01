@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/detection_models.dart';
 import '../../providers/scanner_provider.dart';
 import '../../widgets/section_header.dart';
 
@@ -30,6 +31,19 @@ class _MediaScannerScreenState extends ConsumerState<MediaScannerScreen> {
     final detection = ref.read(mlServiceProvider).scanMedia(path);
     ref.read(mediaDetectionProvider.notifier).state = detection;
     setState(() => _loading = false);
+
+    ref.read(scanHistoryNotifierProvider.notifier).addEntry(
+          ScanHistoryEntry(
+            id: 'media-${DateTime.now().millisecondsSinceEpoch}',
+            type: 'media',
+            title: _fileName ?? 'Media',
+            resultSummary: detection.isUnsafe
+                ? 'Unsafe • ${detection.category}'
+                : 'Safe • ${(detection.confidence * 100).toStringAsFixed(0)}% confidence',
+            date: DateTime.now(),
+            risk: detection.isUnsafe ? RiskLevel.high : RiskLevel.low,
+          ),
+        );
   }
 
   @override

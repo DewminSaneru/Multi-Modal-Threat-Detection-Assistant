@@ -1,19 +1,22 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
-import '../../widgets/section_header.dart';
+import '../../models/detection_models.dart';
+import '../../providers/scanner_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/section_header.dart';
 
-class LinksScannerScreen extends StatefulWidget {
+class LinksScannerScreen extends ConsumerStatefulWidget {
   const LinksScannerScreen({super.key});
 
   @override
-  State<LinksScannerScreen> createState() => _LinksScannerScreenState();
+  ConsumerState<LinksScannerScreen> createState() => _LinksScannerScreenState();
 }
 
-class _LinksScannerScreenState extends State<LinksScannerScreen> {
+class _LinksScannerScreenState extends ConsumerState<LinksScannerScreen> {
   final _controller = TextEditingController();
   bool _loading = false;
   VirusTotalUrlAnalysis? _analysis;
@@ -58,12 +61,33 @@ class _LinksScannerScreenState extends State<LinksScannerScreen> {
         _analysis = analysis;
         _loading = false;
       });
+
+      _addToHistory(analysis);
     } catch (e) {
       setState(() {
         _loading = false;
         _errorMessage = 'Failed to scan URL. ${e.toString()}';
       });
     }
+  }
+
+  void _addToHistory(VirusTotalUrlAnalysis analysis) {
+    final risk = analysis.malicious > 0
+        ? RiskLevel.high
+        : (analysis.suspicious > 0 ? RiskLevel.medium : RiskLevel.low);
+    final summary =
+        '${analysis.malicious} malicious, ${analysis.harmless} harmless'
+        '${analysis.suspicious > 0 ? ', ${analysis.suspicious} suspicious' : ''}';
+    ref.read(scanHistoryNotifierProvider.notifier).addEntry(
+          ScanHistoryEntry(
+            id: 'url-${DateTime.now().millisecondsSinceEpoch}',
+            type: 'url',
+            title: analysis.url.isNotEmpty ? analysis.url : 'URL scan',
+            resultSummary: summary,
+            date: DateTime.now(),
+            risk: risk,
+          ),
+        );
   }
 
   Future<String> _submitUrlForAnalysis(String url) async {

@@ -1,21 +1,23 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
-import '../../widgets/section_header.dart';
+import '../../models/detection_models.dart';
+import '../../providers/scanner_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/section_header.dart';
 
-class FileScannerScreen extends StatefulWidget {
+class FileScannerScreen extends ConsumerStatefulWidget {
   const FileScannerScreen({super.key});
 
   @override
-  State<FileScannerScreen> createState() => _FileScannerScreenState();
+  ConsumerState<FileScannerScreen> createState() => _FileScannerScreenState();
 }
 
-class _FileScannerScreenState extends State<FileScannerScreen> {
+class _FileScannerScreenState extends ConsumerState<FileScannerScreen> {
   static const String _virusTotalApiBase = 'https://www.virustotal.com/api/v3';
   // NOTE: For production apps, avoid hard-coding API keys in source code.
   static const String _virusTotalApiKey =
@@ -68,6 +70,8 @@ class _FileScannerScreenState extends State<FileScannerScreen> {
         _loading = false;
         _statusMessage = null;
       });
+
+      _addToHistory(analysis);
     } catch (e) {
       setState(() {
         _loading = false;
@@ -75,6 +79,24 @@ class _FileScannerScreenState extends State<FileScannerScreen> {
         _errorMessage = 'Scan failed: ${e.toString()}';
       });
     }
+  }
+
+  void _addToHistory(VirusTotalFileAnalysis analysis) {
+    final risk = analysis.malicious > 0
+        ? RiskLevel.high
+        : (analysis.suspicious > 0 ? RiskLevel.medium : RiskLevel.low);
+    final summary = '${analysis.malicious} malicious, ${analysis.harmless} harmless'
+        '${analysis.suspicious > 0 ? ', ${analysis.suspicious} suspicious' : ''}';
+    ref.read(scanHistoryNotifierProvider.notifier).addEntry(
+          ScanHistoryEntry(
+            id: 'file-${DateTime.now().millisecondsSinceEpoch}',
+            type: 'file',
+            title: _fileName ?? 'File',
+            resultSummary: summary,
+            date: DateTime.now(),
+            risk: risk,
+          ),
+        );
   }
 
   Future<String> _uploadFile({
