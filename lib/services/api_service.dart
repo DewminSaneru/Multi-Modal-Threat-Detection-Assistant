@@ -6,7 +6,7 @@ class ApiService {
   // Replace YOUR_LOCAL_IP with your PC's IPv4 address from ipconfig
   // Example: 'http://192.168.1.5:3000'
   // After deploying to Render, replace with your Render URL instead.
-  static const String baseUrl = 'http://10.255.217.132:3000';
+  static const String baseUrl = 'http://localhost:3000';
 
   // ── Signup ─────────────────────────────────────────────────────────────────
 
