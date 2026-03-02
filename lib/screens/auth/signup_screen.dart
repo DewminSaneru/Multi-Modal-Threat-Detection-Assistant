@@ -13,18 +13,20 @@ class SignupScreen extends ConsumerStatefulWidget {
 }
 
 class _SignupScreenState extends ConsumerState<SignupScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
+  final _formKey            = GlobalKey<FormState>();
+  final _nameCtrl           = TextEditingController();
+  final _emailCtrl          = TextEditingController();
+  final _parentEmailCtrl    = TextEditingController();
+  final _passwordCtrl       = TextEditingController();
   final _confirmPasswordCtrl = TextEditingController();
   bool _obscurePassword = true;
-  bool _obscureConfirm = true;
+  bool _obscureConfirm  = true;
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
+    _parentEmailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmPasswordCtrl.dispose();
     super.dispose();
@@ -37,9 +39,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     await auth.signup(
       _emailCtrl.text.trim(),
       _passwordCtrl.text.trim(),
-      userName: _nameCtrl.text.trim().isNotEmpty
-          ? _nameCtrl.text.trim()
-          : null,
+      userName:        _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : null,
+      userParentEmail: _parentEmailCtrl.text.trim(),
     );
     if (auth.isAuthenticated && mounted) context.go('/home');
   }
@@ -104,15 +105,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                                 const SizedBox(height: 16),
                               ],
 
-                              // ── Name ──────────────────────────────────────
+                              // ── Full name (optional) ───────────────────────
                               TextFormField(
                                 controller: _nameCtrl,
-                                textCapitalization:
-                                    TextCapitalization.words,
+                                textCapitalization: TextCapitalization.words,
                                 decoration: const InputDecoration(
                                   labelText: 'Full name (optional)',
-                                  prefixIcon:
-                                      Icon(Icons.person_outline),
+                                  prefixIcon: Icon(Icons.person_outline),
                                 ),
                               ),
                               const SizedBox(height: 16),
@@ -123,13 +122,33 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                                 keyboardType: TextInputType.emailAddress,
                                 decoration: const InputDecoration(
                                   labelText: 'Email',
-                                  prefixIcon:
-                                      Icon(Icons.email_outlined),
+                                  prefixIcon: Icon(Icons.email_outlined),
                                 ),
                                 validator: (v) =>
                                     v != null && v.contains('@')
                                         ? null
                                         : 'Enter a valid email',
+                              ),
+                              const SizedBox(height: 16),
+
+                              // ── Parent email (required) ───────────────────
+                              TextFormField(
+                                controller: _parentEmailCtrl,
+                                keyboardType: TextInputType.emailAddress,
+                                decoration: const InputDecoration(
+                                  labelText: 'Parent email',
+                                  prefixIcon: Icon(Icons.supervisor_account_outlined),
+                                  helperText: 'Required for account verification',
+                                ),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return 'Parent email is required';
+                                  }
+                                  if (!v.contains('@')) {
+                                    return 'Enter a valid parent email';
+                                  }
+                                  return null;
+                                },
                               ),
                               const SizedBox(height: 16),
 
@@ -170,8 +189,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                                         ? Icons.visibility_outlined
                                         : Icons.visibility_off_outlined),
                                     onPressed: () => setState(() =>
-                                        _obscureConfirm =
-                                            !_obscureConfirm),
+                                        _obscureConfirm = !_obscureConfirm),
                                   ),
                                 ),
                                 validator: (v) =>

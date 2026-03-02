@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../widgets/section_header.dart';
@@ -29,7 +30,7 @@ class SettingsScreen extends ConsumerWidget {
                   title: const Text('Profile'),
                   subtitle: const Text('Edit name, email, MFA (mock)'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  onTap: () {},
+                  onTap: () => context.push('/profile'),
                 ),
               ),
               Card(

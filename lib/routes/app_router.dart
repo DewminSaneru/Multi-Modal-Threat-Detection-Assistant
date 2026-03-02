@@ -13,6 +13,7 @@ import '../screens/home/home_screen.dart';
 import '../screens/links/links_scanner_screen.dart';
 import '../screens/media/media_scanner_screen.dart';
 import '../screens/settings/settings_screen.dart';
+import '../screens/profile/profile_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final auth = ref.watch(authProvider);
@@ -65,6 +66,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings',
             builder: (context, state) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/profile',
+            builder: (context, state) => const ProfileScreen(),
           ),
         ],
       ),
