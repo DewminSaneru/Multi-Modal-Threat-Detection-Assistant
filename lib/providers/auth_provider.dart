@@ -16,8 +16,16 @@ class AuthController extends ChangeNotifier {
   String? name;
   String? userId;
   String? token;
-  String? parentEmail;   // ← new field
+  String? parentEmail;
   String? errorMessage;
+
+  // Called after login/signup succeeds to load history
+  // We store this callback so scanner_provider can register it
+  Future<void> Function()? _onAuthSuccess;
+
+  void setOnAuthSuccess(Future<void> Function() callback) {
+    _onAuthSuccess = callback;
+  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -26,17 +34,20 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _applyAuthResponse(Map<String, dynamic> data) {
+  Future<void> _applyAuthResponse(Map<String, dynamic> data) async {
     token = data['token'] as String?;
     final user = data['user'] as Map<String, dynamic>? ?? {};
     userId      = user['id']          as String?;
     email       = user['email']       as String?;
     name        = user['name']        as String?;
-    parentEmail = user['parentEmail'] as String?;   // ← stored from response
+    parentEmail = user['parentEmail'] as String?;
     isAuthenticated = true;
     errorMessage = null;
     isLoading = false;
     notifyListeners();
+
+    // Load history from server after auth
+    await _onAuthSuccess?.call();
   }
 
   void _setError(Object e) {
@@ -56,7 +67,7 @@ class AuthController extends ChangeNotifier {
     _setLoading(true);
     try {
       final data = await _api.login(email: userEmail, password: password);
-      _applyAuthResponse(data);
+      await _applyAuthResponse(data);
     } catch (e) {
       _setError(e);
     }
@@ -78,7 +89,7 @@ class AuthController extends ChangeNotifier {
         name:        userName,
         parentEmail: userParentEmail,
       );
-      _applyAuthResponse(data);
+      await _applyAuthResponse(data);
     } catch (e) {
       _setError(e);
     }
