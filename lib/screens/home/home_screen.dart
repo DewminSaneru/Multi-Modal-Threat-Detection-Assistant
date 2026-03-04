@@ -194,6 +194,11 @@ class _QuickActions extends StatelessWidget {
                   label: const Text('Scan chats'),
                 ),
                 ElevatedButton.icon(
+                  onPressed: () => GoRouter.of(context).go('/links'),
+                  icon: const Icon(Icons.link),
+                  label: const Text('Scan URLs'),
+                ),
+                ElevatedButton.icon(
                   onPressed: () => GoRouter.of(context).go('/media'),
                   icon: const Icon(Icons.perm_media_outlined),
                   label: const Text('Scan media'),

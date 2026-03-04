@@ -44,7 +44,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     switch (_filter) {
       case _HistoryFilter.all:   return true;
       case _HistoryFilter.chats: return h.type == 'chat';
-      case _HistoryFilter.media: return h.type == 'media';
+      case _HistoryFilter.media: return h.type == 'image'; 
       case _HistoryFilter.files: return h.type == 'file';
       case _HistoryFilter.links: return h.type == 'url';
     }
@@ -88,7 +88,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       case 'file':  return Icons.insert_drive_file_outlined;
       case 'url':   return Icons.link;
       case 'chat':  return Icons.chat_bubble_outline;
-      case 'media': return Icons.image_outlined;
+      case 'image': return Icons.image_outlined; 
       default:      return Icons.search;
     }
   }
