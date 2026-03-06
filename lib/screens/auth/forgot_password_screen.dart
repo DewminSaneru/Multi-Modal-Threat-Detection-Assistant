@@ -27,7 +27,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _sending = true);
-    await ref.read(authProvider).forgotPassword(_emailCtrl.text.trim());
+    // await ref.read(authProvider).forgotPassword(_emailCtrl.text.trim());
     setState(() => _sending = false);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

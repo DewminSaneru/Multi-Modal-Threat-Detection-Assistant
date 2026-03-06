@@ -19,13 +19,10 @@ class LinksScannerScreen extends ConsumerStatefulWidget {
 class _LinksScannerScreenState extends ConsumerState<LinksScannerScreen> {
   final _controller = TextEditingController();
   bool _loading = false;
-  VirusTotalUrlAnalysis? _analysis;
+  UrlScanResult? _result;
   String? _errorMessage;
 
-  static const String _virusTotalApiBase = 'https://www.virustotal.com/api/v3';
-  // NOTE: For production apps, avoid hard-coding API keys in source code.
-  static const String _virusTotalApiKey =
-      'ffaa0d2a2b695f81ab3e5376bdae03a943708e55b2edc3450ca50bacb2ff0239';
+  static const String _scanApiUrl = 'http://139.59.103.26:5000/scan';
 
   @override
   void dispose() {
@@ -33,190 +30,78 @@ class _LinksScannerScreenState extends ConsumerState<LinksScannerScreen> {
     super.dispose();
   }
 
-  Future<void> _runScan() async {
-    final rawText = _controller.text;
-    final urlToScan = rawText
-        .split('\n')
-        .map((line) => line.trim())
-        .firstWhere((line) => line.isNotEmpty, orElse: () => '');
+  // ── Extract first non-empty URL from input ────────────────────────────────
 
-    if (urlToScan.isEmpty) {
+  String _extractUrl() {
+    return _controller.text
+        .split('\n')
+        .map((l) => l.trim())
+        .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+  }
+
+  // ── Run scan ──────────────────────────────────────────────────────────────
+
+  Future<void> _runScan() async {
+    final url = _extractUrl();
+    if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter at least one URL to scan.')),
+        const SnackBar(content: Text('Please enter a URL to scan.')),
       );
       return;
     }
 
-    setState(() => _loading = true);
     setState(() {
-      _analysis = null;
+      _loading      = true;
+      _result       = null;
       _errorMessage = null;
     });
 
     try {
-      final analysisId = await _submitUrlForAnalysis(urlToScan);
-      final analysis = await _waitForAnalysisResult(analysisId);
+      final response = await http
+          .post(
+            Uri.parse(_scanApiUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'url': url}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        throw Exception('Server error (status ${response.statusCode})');
+      }
+
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final result  = UrlScanResult.fromJson(decoded);
 
       setState(() {
-        _analysis = analysis;
+        _result  = result;
         _loading = false;
       });
 
-      _addToHistory(analysis);
+      _addToHistory(result);
     } catch (e) {
       setState(() {
-        _loading = false;
-        _errorMessage = 'Failed to scan URL. ${e.toString()}';
+        _loading      = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
     }
   }
 
-  void _addToHistory(VirusTotalUrlAnalysis analysis) {
-    final risk = analysis.malicious > 0
-        ? RiskLevel.high
-        : (analysis.suspicious > 0 ? RiskLevel.medium : RiskLevel.low);
-    final summary =
-        '${analysis.malicious} malicious, ${analysis.harmless} harmless'
-        '${analysis.suspicious > 0 ? ', ${analysis.suspicious} suspicious' : ''}';
+  // ── History ───────────────────────────────────────────────────────────────
+
+  void _addToHistory(UrlScanResult result) {
     ref.read(scanHistoryNotifierProvider.notifier).addEntry(
           ScanHistoryEntry(
-            id: 'url-${DateTime.now().millisecondsSinceEpoch}',
-            type: 'url',
-            title: analysis.url.isNotEmpty ? analysis.url : 'URL scan',
-            resultSummary: summary,
-            date: DateTime.now(),
-            risk: risk,
+            id:            'url-${DateTime.now().millisecondsSinceEpoch}',
+            type:          'url',
+            title:         result.url,
+            resultSummary: '${result.status} • Risk score ${result.riskScorePct}%',
+            date:          DateTime.now(),
+            risk:          result.riskLevel,
           ),
         );
   }
 
-  Future<String> _submitUrlForAnalysis(String url) async {
-    final response = await http.post(
-      Uri.parse('$_virusTotalApiBase/urls'),
-      headers: {
-        'x-apikey': _virusTotalApiKey,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: {'url': url},
-    );
-
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception(
-        'VirusTotal URL submission failed with status ${response.statusCode}',
-      );
-    }
-
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-    final data = decoded['data'] as Map<String, dynamic>?;
-    final id = data?['id'];
-
-    if (id is! String) {
-      throw Exception('Unexpected VirusTotal response format (missing id).');
-    }
-
-    return id;
-  }
-
-  Future<VirusTotalUrlAnalysis> _waitForAnalysisResult(String id) async {
-    const maxAttempts = 10;
-    const delayBetweenAttempts = Duration(seconds: 2);
-
-    VirusTotalUrlAnalysis? lastAnalysis;
-
-    for (var attempt = 0; attempt < maxAttempts; attempt++) {
-      lastAnalysis = await _fetchAnalysis(id);
-
-      if (lastAnalysis.status == 'completed') {
-        return lastAnalysis;
-      }
-
-      await Future.delayed(delayBetweenAttempts);
-    }
-
-    // Return the last analysis even if it never reached "completed"
-    if (lastAnalysis != null) {
-      return lastAnalysis;
-    }
-
-    throw Exception('No analysis data returned from VirusTotal.');
-  }
-
-  Future<VirusTotalUrlAnalysis> _fetchAnalysis(String id) async {
-    final response = await http.get(
-      Uri.parse('$_virusTotalApiBase/analyses/$id'),
-      headers: {
-        'x-apikey': _virusTotalApiKey,
-      },
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'VirusTotal analysis fetch failed with status ${response.statusCode}',
-      );
-    }
-
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-    final data = decoded['data'] as Map<String, dynamic>?;
-
-    if (data == null) {
-      throw Exception('Unexpected VirusTotal response format (missing data).');
-    }
-
-    final attributes = data['attributes'] as Map<String, dynamic>? ?? {};
-    final stats = attributes['stats'] as Map<String, dynamic>? ?? {};
-
-    final malicious = (stats['malicious'] as num?)?.toInt() ?? 0;
-    final harmless = (stats['harmless'] as num?)?.toInt() ?? 0;
-    final suspicious = (stats['suspicious'] as num?)?.toInt() ?? 0;
-    final undetected = (stats['undetected'] as num?)?.toInt() ?? 0;
-
-    final resultsMap = attributes['results'] as Map<String, dynamic>? ?? {};
-
-    final engines = <VirusTotalEngineResult>[];
-
-    resultsMap.forEach((engineKey, value) {
-      if (value is Map<String, dynamic>) {
-        engines.add(
-          VirusTotalEngineResult(
-            engineName: value['engine_name'] as String? ?? engineKey,
-            category: value['category'] as String? ?? 'unknown',
-            method: value['method'] as String? ?? '',
-            result: value['result'] as String? ?? '',
-          ),
-        );
-      }
-    });
-
-    engines.sort((a, b) => _categoryRank(a.category).compareTo(
-          _categoryRank(b.category),
-        ));
-
-    return VirusTotalUrlAnalysis(
-      id: data['id'] as String? ?? id,
-      url: attributes['url'] as String? ?? '',
-      status: attributes['status'] as String? ?? 'unknown',
-      malicious: malicious,
-      harmless: harmless,
-      suspicious: suspicious,
-      undetected: undetected,
-      engines: engines,
-    );
-  }
-
-  int _categoryRank(String category) {
-    switch (category) {
-      case 'malicious':
-        return 0;
-      case 'suspicious':
-        return 1;
-      case 'harmless':
-        return 2;
-      case 'undetected':
-        return 3;
-      default:
-        return 4;
-    }
-  }
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -229,9 +114,12 @@ class _LinksScannerScreenState extends ConsumerState<LinksScannerScreen> {
             children: [
               const SectionHeader(
                 title: 'Scan URLs and links',
-                subtitle: 'Paste or enter links to analyze for threats and malicious content',
+                subtitle:
+                    'Paste a link to check if it is safe or malicious.',
               ),
               const SizedBox(height: 16),
+
+              // ── Input card ────────────────────────────────────────────────
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -240,9 +128,10 @@ class _LinksScannerScreenState extends ConsumerState<LinksScannerScreen> {
                     children: [
                       TextField(
                         controller: _controller,
-                        maxLines: 6,
+                        maxLines: 4,
                         decoration: const InputDecoration(
-                          hintText: 'Paste link(s) here...\nExample: https://example.com',
+                          hintText:
+                              'Paste a URL here...\nExample: https://example.com',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -251,19 +140,15 @@ class _LinksScannerScreenState extends ConsumerState<LinksScannerScreen> {
                         children: [
                           ElevatedButton.icon(
                             onPressed: _loading ? null : _runScan,
-                            icon: const Icon(Icons.science),
-                            label:
-                                Text(_loading ? 'Scanning...' : 'Run analyzers'),
+                            icon: const Icon(Icons.search),
+                            label: Text(
+                                _loading ? 'Scanning...' : 'Scan URL'),
                           ),
                           const SizedBox(width: 12),
                           OutlinedButton(
-                            onPressed: () {
-                              _controller.text =
-                                  'https://example.com\n'
-                                  'https://suspicious-site.com\n'
-                                  'https://trusted-website.org';
-                            },
-                            child: const Text('Load demo links'),
+                            onPressed: () => _controller.text =
+                                'https://www.google.com',
+                            child: const Text('Demo'),
                           ),
                         ],
                       ),
@@ -272,71 +157,54 @@ class _LinksScannerScreenState extends ConsumerState<LinksScannerScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (_errorMessage != null) ...[
+
+              // ── Loading ───────────────────────────────────────────────────
+              if (_loading)
+                Card(
+                  color: Colors.blue.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 12),
+                        Text('Analysing URL...',
+                            style:
+                                TextStyle(color: Colors.blue.shade800)),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // ── Error ─────────────────────────────────────────────────────
+              if (_errorMessage != null)
                 Card(
                   color: Colors.red.shade50,
                   child: Padding(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(14),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Icon(Icons.error_outline, color: Colors.red),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            _errorMessage!,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(color: Colors.red.shade800),
-                          ),
+                          child: Text(_errorMessage!,
+                              style: TextStyle(
+                                  color: Colors.red.shade800)),
                         ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-              ],
-              if (_analysis != null) ...[
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.security, color: AppTheme.accent),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Scan Results',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        if (_analysis!.url.isNotEmpty) ...[
-                          Text(
-                            _analysis!.url,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(color: Colors.grey[700]),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        _buildVerdictChip(_analysis!),
-                        const SizedBox(height: 16),
-                        _buildStatsSection(context, _analysis!),
-                        const SizedBox(height: 16),
-                        _buildEnginesSection(context, _analysis!),
-                      ],
-                    ),
-                  ),
-                ),
+
+              // ── Results ───────────────────────────────────────────────────
+              if (_result != null) ...[
+                _buildVerdictBanner(_result!),
+                const SizedBox(height: 12),
+                _buildDetailsCard(context, _result!),
               ],
             ],
           ),
@@ -345,47 +213,62 @@ class _LinksScannerScreenState extends ConsumerState<LinksScannerScreen> {
     );
   }
 
-  Widget _buildVerdictChip(VirusTotalUrlAnalysis analysis) {
-    final hasMalicious = analysis.malicious > 0;
-    final hasSuspicious = analysis.suspicious > 0;
+  // ── Verdict banner ────────────────────────────────────────────────────────
 
-    late final Color color;
-    late final String label;
+  Widget _buildVerdictBanner(UrlScanResult r) {
+    final Color bg;
+    final Color fg;
+    final IconData icon;
+    final String title;
+    final String subtitle;
 
-    if (hasMalicious) {
-      color = Colors.red;
-      label = 'Malicious content detected (${analysis.malicious} engine(s))';
-    } else if (hasSuspicious) {
-      color = Colors.orange;
-      label =
-          'Suspicious indicators found (${analysis.suspicious} engine(s))';
-    } else {
-      color = Colors.green;
-      label = 'No engines flagged this URL as malicious';
+    switch (r.riskLevel) {
+      case RiskLevel.high:
+        bg       = Colors.red.shade50;
+        fg       = Colors.red.shade800;
+        icon     = Icons.gpp_bad;
+        title    = 'Malicious URL Detected';
+        subtitle = 'This link is dangerous. Do not visit it. Parent notified.';
+        break;
+      case RiskLevel.medium:
+        bg       = Colors.orange.shade50;
+        fg       = Colors.orange.shade800;
+        icon     = Icons.gpp_maybe;
+        title    = 'Suspicious URL';
+        subtitle = 'This link shows suspicious indicators. Proceed with caution.';
+        break;
+      case RiskLevel.low:
+        bg       = Colors.green.shade50;
+        fg       = Colors.green.shade800;
+        icon     = Icons.verified_user;
+        title    = 'URL Appears Safe';
+        subtitle = 'No threats detected on this link.';
+        break;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(20),
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            hasMalicious || hasSuspicious ? Icons.warning_amber : Icons.check,
-            color: color,
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
+          Icon(icon, color: fg, size: 40),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        color: fg,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16)),
+                const SizedBox(height: 4),
+                Text(subtitle,
+                    style: TextStyle(color: fg, fontSize: 13)),
+              ],
             ),
           ),
         ],
@@ -393,217 +276,167 @@ class _LinksScannerScreenState extends ConsumerState<LinksScannerScreen> {
     );
   }
 
-  Widget _buildStatsSection(
-    BuildContext context,
-    VirusTotalUrlAnalysis analysis,
-  ) {
-    final total = analysis.totalEngines.toDouble();
-    final stats = <_StatRow>[
-      _StatRow(
-        label: 'Malicious',
-        count: analysis.malicious,
-        color: Colors.red,
-      ),
-      _StatRow(
-        label: 'Suspicious',
-        count: analysis.suspicious,
-        color: Colors.orange,
-      ),
-      _StatRow(
-        label: 'Harmless',
-        count: analysis.harmless,
-        color: Colors.green,
-      ),
-      _StatRow(
-        label: 'Undetected',
-        count: analysis.undetected,
-        color: Colors.grey,
-      ),
-    ];
+  // ── Details card ──────────────────────────────────────────────────────────
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Detection statistics',
-          style: Theme.of(context)
-              .textTheme
-              .titleSmall
-              ?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        ...stats.map((s) {
-          final ratio = total > 0 ? s.count / total : 0.0;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildDetailsCard(BuildContext context, UrlScanResult r) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      s.label,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w500),
-                    ),
-                    Text(
-                      '${s.count} engine(s)',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: ratio,
-                    minHeight: 8,
-                    backgroundColor: Colors.grey[200],
-                    valueColor: AlwaysStoppedAnimation<Color>(s.color),
+                const Icon(Icons.analytics_outlined,
+                    color: AppTheme.accent),
+                const SizedBox(width: 8),
+                Text('Scan Details',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Scanned URL
+            _buildInfoRow(context, 'URL', r.url, isUrl: true),
+            const Divider(height: 24),
+
+            // Status badge
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Status',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w500)),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: r.statusColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    r.status,
+                    style: TextStyle(
+                        color: r.statusColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13),
                   ),
                 ),
               ],
             ),
-          );
-        }),
-      ],
+            const SizedBox(height: 16),
+
+            // Risk score meter
+            Text('Risk Score',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: r.riskScore.clamp(0.0, 1.0),
+                      minHeight: 14,
+                      backgroundColor: Colors.grey[200],
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(r.statusColor),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '${r.riskScorePct}%',
+                  style: TextStyle(
+                      color: r.statusColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Safe', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                Text('Malicious', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildEnginesSection(
-    BuildContext context,
-    VirusTotalUrlAnalysis analysis,
-  ) {
-    if (analysis.engines.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final enginesToShow = analysis.engines.length > 12
-        ? analysis.engines.take(12).toList()
-        : analysis.engines;
-
-    return Column(
+  Widget _buildInfoRow(BuildContext context, String label, String value,
+      {bool isUrl = false}) {
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Engine verdicts (${analysis.engines.length})',
-          style: Theme.of(context)
-              .textTheme
-              .titleSmall
-              ?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        ...enginesToShow.map(
-          (engine) => ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(
-              Icons.shield,
-              size: 18,
-              color: _engineCategoryColor(engine.category),
-            ),
-            title: Text(
-              engine.engineName,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(fontWeight: FontWeight.w500),
-            ),
-            subtitle: Text(
-              '${engine.category} • ${engine.result}',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey[700]),
-            ),
+        Text('$label  ',
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w500)),
+        Expanded(
+          child: Text(
+            value,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: isUrl ? Colors.blue[700] : Colors.grey[700],
+                ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
           ),
         ),
-        if (analysis.engines.length > enginesToShow.length)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              '+ ${analysis.engines.length - enginesToShow.length} more engines...',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey[600]),
-            ),
-          ),
       ],
     );
   }
-
-  Color _engineCategoryColor(String category) {
-    switch (category) {
-      case 'malicious':
-        return Colors.red;
-      case 'suspicious':
-        return Colors.orange;
-      case 'harmless':
-        return Colors.green;
-      case 'undetected':
-        return Colors.grey;
-      default:
-        return Colors.blueGrey;
-    }
-  }
-
 }
 
-class VirusTotalUrlAnalysis {
-  VirusTotalUrlAnalysis({
-    required this.id,
+// ── Result model ──────────────────────────────────────────────────────────────
+
+class UrlScanResult {
+  const UrlScanResult({
     required this.url,
     required this.status,
-    required this.malicious,
-    required this.harmless,
-    required this.suspicious,
-    required this.undetected,
-    required this.engines,
+    required this.riskScore,
   });
 
-  final String id;
   final String url;
-  final String status;
-  final int malicious;
-  final int harmless;
-  final int suspicious;
-  final int undetected;
-  final List<VirusTotalEngineResult> engines;
+  final String status;   // "SAFE" | "MALICIOUS"
+  final double riskScore; // 0.0 – 1.0
 
-  int get totalEngines =>
-      malicious + harmless + suspicious + undetected;
+  factory UrlScanResult.fromJson(Map<String, dynamic> json) {
+    return UrlScanResult(
+      url:       json['url']        as String? ?? '',
+      status:    json['status']     as String? ?? 'UNKNOWN',
+      riskScore: (json['risk_score'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  // Risk score as percentage string
+  String get riskScorePct => (riskScore * 100).toStringAsFixed(0);
+
+  // Map status → RiskLevel for history + parent email
+  RiskLevel get riskLevel {
+    if (status == 'MALICIOUS' || riskScore >= 0.7) return RiskLevel.high;
+    if (riskScore >= 0.4)                           return RiskLevel.medium;
+    return RiskLevel.low;
+  }
+
+  Color get statusColor {
+    switch (riskLevel) {
+      case RiskLevel.high:   return Colors.red;
+      case RiskLevel.medium: return Colors.orange;
+      case RiskLevel.low:    return Colors.green;
+    }
+  }
 }
-
-class VirusTotalEngineResult {
-  VirusTotalEngineResult({
-    required this.engineName,
-    required this.category,
-    required this.method,
-    required this.result,
-  });
-
-  final String engineName;
-  final String category;
-  final String method;
-  final String result;
-}
-
-class _StatRow {
-  const _StatRow({
-    required this.label,
-    required this.count,
-    required this.color,
-  });
-
-  final String label;
-  final int count;
-  final Color color;
-}
-
