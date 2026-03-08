@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../../providers/scanner_provider.dart';
+import '../../models/detection_models.dart';
 
 import '../../services/whatsapp_socket_service.dart';
 import '../../theme/app_theme.dart';
@@ -213,6 +215,32 @@ class _MediaScannerScreenState extends ConsumerState<MediaScannerScreen> {
         senderName: senderName,
         filename:   filename,
       ));
+      final scanResult = MediaScanResult.fromJson(
+      decoded,
+      messageId:  messageId,
+      senderName: senderName,
+      filename:   filename,
+    );
+    notifier.add(scanResult);
+
+    // ← ADD THIS BLOCK
+    final risk = scanResult.safetyStatus == 'BLOCKED'
+        ? RiskLevel.high
+        : scanResult.safetyStatus == 'WARNING'
+            ? RiskLevel.medium
+            : RiskLevel.low;
+
+    ref.read(scanHistoryNotifierProvider.notifier).addEntry(
+      ScanHistoryEntry(
+        id:            'media-${DateTime.now().millisecondsSinceEpoch}',
+        type:          'image',
+        title:         filename ?? 'WhatsApp Image',
+        resultSummary: '${scanResult.safetyStatus} • ${scanResult.predictedClass} '
+                      '(${(scanResult.confidence * 100).toStringAsFixed(0)}%)',
+        date:          DateTime.now(),
+        risk:          risk,
+      ),
+    );
     } catch (e) {
       if (mounted) {
         setState(() => _scanError = e.toString().replaceFirst('Exception: ', ''));
